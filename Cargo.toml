@@ -1,0 +1,14 @@
+[package]
+name = "bevy_dirworld"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.83"
+
+[dependencies.bevy]
+version = "0.13"
+
+[dependencies.bevy_rapier3d]
+version = "0.26"
+
