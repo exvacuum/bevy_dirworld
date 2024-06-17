@@ -1,6 +1,6 @@
 [package]
 name = "bevy_dirworld"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [dependencies]
@@ -8,6 +8,7 @@ anyhow = "1.0.83"
 
 [dependencies.bevy]
 version = "0.13"
+features = ["file_watcher"]
 
 [dependencies.bevy_rapier3d]
 version = "0.26"
