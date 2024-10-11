@@ -16,3 +16,9 @@ pub enum DirworldNavigationEvent {
         path: PathBuf,
     },
 }
+
+#[derive(Event)]
+pub struct DirworldSpawn {
+    pub entity: Entity,
+    pub data: Option<Vec<u8>>,
+}

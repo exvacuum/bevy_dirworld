@@ -1,80 +1,29 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-};
+use std::{collections::BTreeMap, path::PathBuf};
 
-use anyhow::{Context, Result};
-use bevy::prelude::*;
+use bevy::{ecs::world::CommandQueue, prelude::*, tasks::Task};
+use multi_key_map::MultiKeyMap;
+use occule::Codec;
 
-use crate::events::DirworldNavigationEvent;
+/// Root directory of the world
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct DirworldRootDir(pub Option<PathBuf>);
 
-/// Configuration for Dirworld.
-#[derive(Resource)]
-pub struct DirworldConfig {
-    root: PathBuf,
-}
+/// Current directory of the world
+#[derive(Resource, Deref, DerefMut, Default)]
+pub struct DirworldCurrentDir(pub Option<PathBuf>);
 
-impl DirworldConfig {
-    /// Construct a new dirworld config with the given root path. Will panic if the provided path
-    /// cannot be canonicalized.
-    // TODO: Don't panic? lol
-    pub fn new(root: PathBuf) -> Self {
-        Self {
-            root: fs::canonicalize(root).expect("Failed to canonicalize path!"),
-        }
-    }
+/// Running background tasks
+#[derive(Default, Resource, Deref, DerefMut)]
+pub struct DirworldTasks(pub BTreeMap<String, Task<Option<CommandQueue>>>);
 
-    ///
-    pub fn root(&self) -> &PathBuf {
-        &self.root
-    }
-}
+#[derive(Debug, Default, Resource, Deref, DerefMut)]
+pub(crate) struct DirworldObservers(pub MultiKeyMap<EntryType, Entity>);
 
-/// Contains the dirworld state.
-#[derive(Resource)]
-pub struct Dirworld {
-    /// Current active directory.
-    pub path: PathBuf,
+#[derive(Default, Resource, Deref, DerefMut)]
+pub(crate) struct DirworldCodecs(pub MultiKeyMap<String, Box<dyn Codec + Send + Sync>>);
 
-    /// Entities local to the current room.
-    pub tracked_entities: Vec<Entity>,
-}
-
-impl FromWorld for Dirworld {
-    fn from_world(world: &mut World) -> Self {
-        let config = world.remove_resource::<DirworldConfig>().unwrap();
-        world.send_event(DirworldNavigationEvent::EnteredRoom {
-            path: config.root().clone(),
-        });
-        let result = Self {
-            path: config.root().clone(),
-            tracked_entities: vec![],
-        };
-        world.insert_resource(config);
-        result
-    }
-}
-
-impl Dirworld {
-    /// Move into a new room.
-    // TODO: Clear tracked entities?
-    // TODO: Make into command extension trait?
-    pub fn navigate_to(
-        &mut self,
-        path: PathBuf,
-        event_writer: &mut EventWriter<DirworldNavigationEvent>,
-    ) -> Result<()> {
-        event_writer.send(DirworldNavigationEvent::LeftRoom {
-            path: self.path.clone(),
-        });
-        self.path = Path::new(&self.path)
-            .join(path)
-            .to_str()
-            .context("Path not valid UTF-8")?
-            .into();
-        event_writer.send(DirworldNavigationEvent::EnteredRoom {
-            path: self.path.clone(),
-        });
-        Ok(())
-    }
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub enum EntryType {
+    File(Option<String>),
+    Folder,
 }
