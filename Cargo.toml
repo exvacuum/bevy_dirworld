@@ -1,6 +1,6 @@
 [package]
 name = "bevy_dirworld"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 
 [dependencies]
@@ -14,7 +14,6 @@ multi_key_map = "0.3.0"
 serde = "1.0"
 rmp-serde = "1.3.0"
 anymap = "0.12"
-strum = "0.26"
 notify-debouncer-full = "0.3"
 md5 = "0.7"
 bevy-async-ecs = "0.6"
@@ -25,7 +24,7 @@ hex-literal = "0.4"
 [dependencies.bevy]
 version = "0.14"
 default-features = false
-features = ["serialize"]
+features = ["serialize", "multi_threaded"]
 
 [dependencies.avian3d]
 version = "0.1"
@@ -42,6 +41,10 @@ features = ["serde"]
 [dependencies.bevy_scriptum]
 version = "0.6"
 features = ["lua"]
+
+[dependencies.strum]
+version = "0.26"
+features = ["derive"]
 
 [features]
 default = ["yarnspinner"]
