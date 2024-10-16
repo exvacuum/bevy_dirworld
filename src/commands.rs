@@ -1,281 +1,27 @@
 use std::{
-    fs, iter,
-    path::{Path, PathBuf},
+    fs, path::PathBuf,
 };
 
 use bevy::{
-    ecs::{
-        system::SystemState,
-        world::{Command, CommandQueue},
-    },
+    ecs::
+        world::{Command, CommandQueue}
+    ,
     prelude::*,
     tasks::AsyncComputeTaskPool,
 };
 use crypto::{
     aes::KeySize,
-    blockmodes::{EcbEncryptor, PkcsPadding},
+    blockmodes::PkcsPadding,
     buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer},
 };
 use occule::Error;
 use xz2::read::{XzDecoder, XzEncoder};
 
 use crate::{
-    components::DirworldEntity,
-    events::{DirworldNavigationEvent, DirworldSpawn},
-    payload::{DirworldComponent, DirworldComponentDiscriminants, DirworldEntityPayload},
-    resources::{
-        DirworldCodecs, DirworldCurrentDir, DirworldObservers, DirworldRootDir, DirworldTasks,
-        EntryType,
-    },
-    Extensions,
+    payload::{DirworldComponent, DirworldComponentDiscriminants, DirworldEntityPayload}, resources::{
+        DirworldCodecs, DirworldObservers, DirworldTasks,
+    }, utils::extract_entity_payload, Extensions
 };
-
-struct DirworldNavigateCommand {
-    pub path: PathBuf,
-}
-
-impl Command for DirworldNavigateCommand {
-    fn apply(self, world: &mut World) {
-        let root_dir = world.remove_resource::<DirworldRootDir>().unwrap();
-        let mut current_dir = world.remove_resource::<DirworldCurrentDir>().unwrap();
-
-        let current_path;
-        let old_dir;
-        if let Some(old_path) = &current_dir.0 {
-            world.send_event(DirworldNavigationEvent::LeftRoom {
-                path: old_path.clone(),
-            });
-
-            current_path = old_path.join(self.path);
-            old_dir = Some(old_path.clone());
-        } else {
-            current_path = self.path;
-            old_dir = None;
-        }
-        current_dir.0 = Some(current_path.clone());
-
-        let mut system_state: SystemState<(
-            Commands,
-            Query<(Entity, &DirworldEntity)>,
-            Res<DirworldObservers>,
-            Res<DirworldCodecs>,
-        )> = SystemState::new(world);
-        let (mut commands, dirworld_entities, observers, codecs) = system_state.get_mut(world);
-        update_entries(
-            &mut commands,
-            &dirworld_entities,
-            old_dir,
-            &current_path,
-            &root_dir.0.clone().unwrap(),
-            &observers,
-            &codecs,
-        );
-        system_state.apply(world);
-
-        world.send_event(DirworldNavigationEvent::EnteredRoom { path: current_path });
-        world.insert_resource(current_dir);
-        world.insert_resource(root_dir);
-    }
-}
-
-pub(crate) fn update_entries(
-    commands: &mut Commands,
-    dirworld_entities: &Query<(Entity, &DirworldEntity)>,
-    old_dir: Option<PathBuf>,
-    current_dir: &PathBuf,
-    project_dir: &PathBuf,
-    observers: &DirworldObservers,
-    codecs: &DirworldCodecs,
-) {
-    let directory = current_dir.read_dir().unwrap();
-
-    if let Some(old_dir) = old_dir {
-        let mut entities_to_despawn = vec![];
-        for (entity, dirworld_entity) in dirworld_entities.iter() {
-            if dirworld_entity.path.parent().unwrap() == old_dir {
-                entities_to_despawn.push(entity);
-            }
-        }
-        for entity in entities_to_despawn {
-            commands.entity(entity).despawn_recursive();
-        }
-    }
-
-    let mut entry_paths: Vec<PathBuf> = directory
-        .flatten()
-        .map(|entry| entry.path().canonicalize().unwrap())
-        .collect::<Vec<_>>();
-    entry_paths.retain(|entry| {
-        !entry
-            .file_name()
-            .is_some_and(|entry| entry.to_string_lossy().starts_with("."))
-    });
-    if current_dir != project_dir {
-        entry_paths = iter::once(current_dir.join(".."))
-            .chain(entry_paths)
-            .collect();
-    }
-
-    for entry_path in entry_paths {
-        process_entry(commands, &entry_path, &observers, &codecs);
-    }
-}
-
-pub(crate) fn process_entry(
-    commands: &mut Commands,
-    entry_path: &PathBuf,
-    observers: &DirworldObservers,
-    codecs: &DirworldCodecs,
-) {
-    let (payload, data) = extract_payload(entry_path, codecs);
-    let transform = if let Some(component) = payload
-        .as_ref()
-        .and_then(|payload| payload.component("Transform"))
-    {
-        if let DirworldComponent::Transform(component) = component {
-            component.clone()
-        } else {
-            panic!("Failed to decompose component")
-        }
-    } else {
-        Transform::default()
-    };
-
-    let entity = commands.spawn((
-        SpatialBundle {
-            transform,
-            ..Default::default()
-        },
-        DirworldEntity {
-            path: entry_path.clone(),
-            payload: payload.clone(),
-        },
-    ));
-
-    let entity = entity.id();
-    let entry_type = if entry_path.is_dir() {
-        EntryType::Folder
-    } else {
-        let extensions = entry_path.extensions();
-        EntryType::File(extensions)
-    };
-    if let Some(observer) = observers.get(&entry_type) {
-        commands.trigger_targets(DirworldSpawn { entity, data }, observer.clone());
-    }
-}
-
-fn extract_payload(
-    entry_path: &PathBuf,
-    codecs: &DirworldCodecs,
-) -> (Option<DirworldEntityPayload>, Option<Vec<u8>>) {
-    let entry_type = if entry_path.is_dir() {
-        EntryType::Folder
-    } else {
-        let extensions = entry_path.extensions();
-        EntryType::File(extensions)
-    };
-
-    let mut data: Option<Vec<u8>> = None;
-    let mut payload: Option<DirworldEntityPayload> = None;
-    match &entry_type {
-        EntryType::File(Some(extension)) => {
-            if let Ok(file_data) = fs::read(entry_path.clone()) {
-                match codecs.get(extension) {
-                    Some(codec) => match codec.decode(&file_data.as_slice()) {
-                        Ok((carrier, extracted_payload)) => {
-                            match rmp_serde::from_slice::<DirworldEntityPayload>(
-                                extracted_payload.as_slice(),
-                            ) {
-                                Ok(deserialized_payload) => {
-                                    data = Some(carrier);
-                                    payload = Some(deserialized_payload);
-                                }
-                                Err(e) => {
-                                    warn!("{:?}", e);
-                                    data = Some(file_data);
-                                }
-                            }
-                        }
-                        Err(e) => match e {
-                            Error::DataNotEncoded => {
-                                data = Some(file_data);
-                            }
-                            _ => error!("{:?}", e),
-                        },
-                    },
-                    None => {
-                        data = Some(file_data);
-                    }
-                }
-            } else {
-                warn!("Failed to read data from {entry_path:?}");
-            }
-        }
-        EntryType::Folder => {
-            let door_path = entry_path.join(".door");
-            if door_path.exists() {
-                let door_file_data = fs::read(door_path).unwrap();
-                match rmp_serde::from_slice::<DirworldEntityPayload>(&door_file_data.as_slice()) {
-                    Ok(deserialized_payload) => {
-                        payload = Some(deserialized_payload);
-                    }
-                    Err(e) => {
-                        warn!("{:?}", e);
-                    }
-                }
-            }
-        }
-        _ => {}
-    }
-    (payload, data)
-}
-
-struct DirworldChangeRootCommand {
-    pub path: PathBuf,
-}
-
-impl Command for DirworldChangeRootCommand {
-    fn apply(self, world: &mut World) {
-        let mut root_dir = world.remove_resource::<DirworldRootDir>().unwrap();
-        let mut current_dir = world.remove_resource::<DirworldCurrentDir>().unwrap();
-
-        let old_root;
-        if let DirworldRootDir(Some(old_dir)) = root_dir {
-            world.send_event(DirworldNavigationEvent::LeftRoom {
-                path: self.path.clone(),
-            });
-            old_root = Some(old_dir);
-        } else {
-            old_root = None;
-        }
-
-        root_dir.0 = Some(self.path.canonicalize().unwrap());
-        current_dir.0 = Some(self.path.canonicalize().unwrap());
-
-        let mut system_state: SystemState<(
-            Commands,
-            Query<(Entity, &DirworldEntity)>,
-            Res<DirworldObservers>,
-            Res<DirworldCodecs>,
-        )> = SystemState::new(world);
-        let (mut commands, dirworld_entities, observers, codecs) = system_state.get_mut(world);
-        update_entries(
-            &mut commands,
-            &dirworld_entities,
-            old_root,
-            &current_dir.0.clone().unwrap(),
-            &root_dir.0.clone().unwrap(),
-            &observers,
-            &codecs,
-        );
-        system_state.apply(world);
-
-        world.send_event(DirworldNavigationEvent::EnteredRoom { path: self.path });
-
-        world.insert_resource(root_dir);
-        world.insert_resource(current_dir);
-    }
-}
 
 struct DirworldLockDoorCommand {
     path: PathBuf,
@@ -287,7 +33,7 @@ impl Command for DirworldLockDoorCommand {
         let path = self.path.clone();
         // Get existing payload
         let codecs = world.remove_resource::<DirworldCodecs>().unwrap();
-        let (payload, _) = extract_payload(&path, &codecs);
+        let (payload, _) = extract_entity_payload(&path, &codecs);
         world.insert_resource(codecs);
         let task = AsyncComputeTaskPool::get().spawn(async move {
             // Tar directory
@@ -357,7 +103,7 @@ impl Command for DirworldUnlockDoorCommand {
         let path = self.path.clone();
         // Get existing payload
         let codecs = world.remove_resource::<DirworldCodecs>().unwrap();
-        let (payload, carrier) = extract_payload(&path, &codecs);
+        let (payload, carrier) = extract_entity_payload(&path, &codecs);
         world.insert_resource(codecs);
         let task = AsyncComputeTaskPool::get().spawn(async move {
             // Decrypt archive
@@ -509,12 +255,6 @@ impl Command for DirworldSaveEntityCommand {
 
 /// Commands for dirworld navigation
 pub trait DirworldCommands {
-    /// Change the root of the world. This will also set the current directory. This is not really meant to be used in-game but is useful for editor applications.
-    fn dirworld_change_root(&mut self, path: PathBuf);
-
-    /// Move to given directory
-    fn dirworld_navigate(&mut self, path: PathBuf);
-
     /// Lock Door
     fn dirworld_lock_door(&mut self, path: PathBuf, key: Vec<u8>);
 
@@ -525,14 +265,6 @@ pub trait DirworldCommands {
 }
 
 impl<'w, 's> DirworldCommands for Commands<'w, 's> {
-    fn dirworld_change_root(&mut self, path: PathBuf) {
-        self.add(DirworldChangeRootCommand { path });
-    }
-
-    fn dirworld_navigate(&mut self, path: PathBuf) {
-        self.add(DirworldNavigateCommand { path });
-    }
-
     fn dirworld_lock_door(&mut self, path: PathBuf, key: Vec<u8>) {
         self.add(DirworldLockDoorCommand { key, path });
     }

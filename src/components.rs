@@ -14,3 +14,6 @@ pub struct DirworldEntity {
     pub path: PathBuf,
     pub payload: Option<DirworldEntityPayload>,
 }
+
+#[derive(Debug, Component)]
+pub struct Persist;

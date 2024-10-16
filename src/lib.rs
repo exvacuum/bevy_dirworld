@@ -6,8 +6,9 @@ use std::{ffi::OsStr, path::PathBuf};
 
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
 use bevy_scriptum::{runtimes::lua::LuaRuntime, BuildScriptingRuntime, ScriptingRuntimeBuilder};
-use events::{DirworldNavigationEvent, DirworldSpawn};
+use events::{DirworldChangeRoot, DirworldEnterRoom, DirworldLeaveRoom, DirworldNavigationEvent, DirworldSpawn};
 use occule::Codec;
+use resources::DirworldCache;
 use resources::{
     DirworldCodecs, DirworldCurrentDir, DirworldObservers, DirworldRootDir, DirworldTasks,
     EntryType,
@@ -30,6 +31,10 @@ mod watcher;
 pub mod commands;
 
 mod systems;
+
+mod observers;
+
+mod utils;
 
 /// Payload for dirworld entities
 pub mod payload;
@@ -54,24 +59,27 @@ impl Plugin for DirworldPlugin {
                 Update,
                 (systems::remove_completed_tasks, lua_api::trigger_update),
             )
-            .add_systems(PostUpdate, watcher::update)
-            .add_systems(
-                PreUpdate,
-                watcher::handle_changes,
-            )
+            .add_systems(PostUpdate, (watcher::update, systems::sync_entity_transforms))
             .add_scripting::<LuaRuntime>(|runtime| {
                 let runtime = lua_api::register(runtime);
                 if let Some(register_custom) = &self.register_custom_lua_api {
                     (register_custom)(runtime);
                 }
             })
-            .add_event::<DirworldNavigationEvent>()
+            .init_resource::<DirworldCache>()
             .init_resource::<DirworldRootDir>()
             .init_resource::<DirworldCurrentDir>()
             .init_resource::<DirworldTasks>()
             .init_resource::<DirworldObservers>()
             .init_resource::<DirworldCodecs>()
-            .add_event::<DirworldWatcherEvent>();
+            .add_event::<DirworldEnterRoom>()
+            .add_event::<DirworldLeaveRoom>()
+            .add_event::<DirworldChangeRoot>()
+            .add_event::<DirworldWatcherEvent>()
+            .observe(observers::navigate_to_room)
+            .observe(observers::handle_changes)
+            .observe(observers::change_root)
+            .observe(observers::navigate_from_room);
     }
 }
 

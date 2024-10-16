@@ -17,6 +17,15 @@ pub enum DirworldNavigationEvent {
     },
 }
 
+#[derive(Debug, Event, Deref, DerefMut)]
+pub struct DirworldLeaveRoom(pub PathBuf);
+
+#[derive(Debug, Event, Deref, DerefMut)]
+pub struct DirworldEnterRoom(pub PathBuf);
+
+#[derive(Debug, Event, Deref, DerefMut)]
+pub struct DirworldChangeRoot(pub PathBuf);
+
 #[derive(Event)]
 pub struct DirworldSpawn {
     pub entity: Entity,

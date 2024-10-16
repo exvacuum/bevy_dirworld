@@ -1,8 +1,10 @@
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::{BTreeMap, HashMap}, path::PathBuf};
 
 use bevy::{ecs::world::CommandQueue, prelude::*, tasks::Task};
 use multi_key_map::MultiKeyMap;
 use occule::Codec;
+
+use crate::payload::DirworldEntityPayload;
 
 /// Root directory of the world
 #[derive(Resource, Deref, DerefMut, Default)]
@@ -27,3 +29,7 @@ pub enum EntryType {
     File(Option<String>),
     Folder,
 }
+
+/// Structure containing payload data for cached (non-current) rooms
+#[derive(Resource, Default, Debug, Deref, DerefMut)]
+pub struct DirworldCache(pub HashMap<PathBuf, DirworldEntityPayload>);
