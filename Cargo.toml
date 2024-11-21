@@ -48,7 +48,7 @@ features = ["lua"]
 
 [dependencies.bevy_basic_interaction]
 git = "https://github.com/exvacuum/bevy_basic_interaction.git"
-tag = "v0.1.0"
+branch = "wip"
 
 [features]
 default = ["yarnspinner"]
