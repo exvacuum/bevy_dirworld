@@ -4,9 +4,14 @@
 
 use std::{ffi::OsStr, path::PathBuf};
 
+use actor::ActorPlugin;
+use bevy::render::mesh::ExtrusionBuilder;
 use bevy::{ecs::system::IntoObserverSystem, prelude::*};
 use bevy_scriptum::{runtimes::lua::LuaRuntime, BuildScriptingRuntime, ScriptingRuntimeBuilder};
-use events::{DirworldChangeRoot, DirworldEnterRoom, DirworldLeaveRoom, DirworldNavigationEvent, DirworldSpawn};
+use events::{
+    DirworldChangeRoot, DirworldEnterRoom, DirworldLeaveRoom, DirworldNavigationEvent,
+    DirworldSpawn,
+};
 use occule::Codec;
 use resources::DirworldCache;
 use resources::{
@@ -15,6 +20,7 @@ use resources::{
 };
 pub use watcher::DirworldWatcherEvent;
 pub use watcher::DirworldWatcherSet;
+use yarnspinner::core::Library;
 
 /// Components used by this plugin
 pub mod components;
@@ -34,7 +40,7 @@ mod systems;
 
 mod observers;
 
-mod utils;
+pub mod utils;
 
 /// Payload for dirworld entities
 pub mod payload;
@@ -43,6 +49,12 @@ pub mod payload;
 pub mod actor;
 
 mod lua_api;
+
+pub mod conditionals;
+
+pub mod yarnspinner_api;
+
+pub mod room_generation;
 
 /// Plugin which enables high-level interaction
 #[derive(Default)]
@@ -54,32 +66,42 @@ pub struct DirworldPlugin {
 impl Plugin for DirworldPlugin {
     fn build(&self, app: &mut App) {
         info!("building");
-        app.add_systems(Startup, watcher::setup)
-            .add_systems(
-                Update,
-                (systems::remove_completed_tasks, lua_api::trigger_update),
-            )
-            .add_systems(PostUpdate, (watcher::update, systems::sync_entity_transforms))
-            .add_scripting::<LuaRuntime>(|runtime| {
-                let runtime = lua_api::register(runtime);
-                if let Some(register_custom) = &self.register_custom_lua_api {
-                    (register_custom)(runtime);
-                }
-            })
-            .init_resource::<DirworldCache>()
-            .init_resource::<DirworldRootDir>()
-            .init_resource::<DirworldCurrentDir>()
-            .init_resource::<DirworldTasks>()
-            .init_resource::<DirworldObservers>()
-            .init_resource::<DirworldCodecs>()
-            .add_event::<DirworldEnterRoom>()
-            .add_event::<DirworldLeaveRoom>()
-            .add_event::<DirworldChangeRoot>()
-            .add_event::<DirworldWatcherEvent>()
-            .observe(observers::navigate_to_room)
-            .observe(observers::handle_changes)
-            .observe(observers::change_root)
-            .observe(observers::navigate_from_room);
+        app.add_plugins(ActorPlugin {
+            custom_function_registration: Some(yarnspinner_api::setup_yarnspinner_functions),
+        })
+        .add_systems(Startup, watcher::setup)
+        .add_systems(
+            Update,
+            (
+                systems::remove_completed_tasks,
+                lua_api::trigger_update,
+                yarnspinner_api::process_commands,
+            ),
+        )
+        .add_systems(
+            PostUpdate,
+            watcher::update,
+        )
+        .add_scripting::<LuaRuntime>(|runtime| {
+            let runtime = lua_api::register(runtime);
+            if let Some(register_custom) = &self.register_custom_lua_api {
+                (register_custom)(runtime);
+            }
+        })
+        .init_resource::<DirworldCache>()
+        .init_resource::<DirworldRootDir>()
+        .init_resource::<DirworldCurrentDir>()
+        .init_resource::<DirworldTasks>()
+        .init_resource::<DirworldObservers>()
+        .init_resource::<DirworldCodecs>()
+        .add_event::<DirworldEnterRoom>()
+        .add_event::<DirworldLeaveRoom>()
+        .add_event::<DirworldChangeRoot>()
+        .add_event::<DirworldWatcherEvent>()
+        .observe(observers::navigate_to_room)
+        .observe(observers::handle_changes)
+        .observe(observers::change_root)
+        .observe(observers::navigate_from_room);
     }
 }
 

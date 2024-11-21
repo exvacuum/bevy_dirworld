@@ -3,7 +3,7 @@ use bevy::{
     tasks::{block_on, futures_lite::future},
 };
 
-use crate::{components::DirworldEntity, payload::DirworldComponent, resources::DirworldTasks};
+use crate::{components::DirworldEntity, resources::DirworldTasks};
 
 pub fn remove_completed_tasks(mut commands: Commands, mut tasks: ResMut<DirworldTasks>) {
     tasks.retain(|_, task| {
@@ -22,12 +22,8 @@ pub fn sync_entity_transforms(
     for (mut dirworld_entity, transform, global_transform) in dirworld_entity_query.iter_mut() {
         if transform.is_changed() && !transform.is_added() {
             if let Some(payload) = &mut dirworld_entity.payload {
-                if let Some(DirworldComponent::Transform(payload_transform)) =
-                    payload.component_mut("Transform")
-                {
-                    let transform = global_transform.compute_transform();
-                    *payload_transform = transform;
-                }
+                let transform = global_transform.compute_transform();
+                *payload.transform = transform;
             }
         }
     }

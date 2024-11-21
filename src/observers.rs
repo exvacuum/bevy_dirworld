@@ -12,16 +12,17 @@ use crate::{
     resources::{
         DirworldCache, DirworldCodecs, DirworldCurrentDir, DirworldObservers, DirworldRootDir,
     },
-    utils::{despawn_entity_by_path, spawn_entity},
+    utils::{despawn_entity_by_path, extract_entity_payload, spawn_entity},
     DirworldWatcherEvent,
 };
 
 /// On navigation from a room, insert modified payloads into the cache
 pub fn navigate_from_room(
-    _: Trigger<DirworldLeaveRoom>,
+    trigger: Trigger<DirworldLeaveRoom>,
     entities: Query<(Entity, Ref<DirworldEntity>), Without<Persist>>,
     mut cache: ResMut<DirworldCache>,
     mut commands: Commands,
+    mut event_writer: EventWriter<DirworldLeaveRoom>,
 ) {
     for (entity, dirworld_entity) in entities.iter() {
         if let Some(payload) = &dirworld_entity.payload {
@@ -30,6 +31,7 @@ pub fn navigate_from_room(
         }
         commands.entity(entity).despawn_recursive();
     }
+    event_writer.send(trigger.event().clone());
 }
 
 pub fn navigate_to_room(
@@ -39,9 +41,16 @@ pub fn navigate_to_room(
     observers: Res<DirworldObservers>,
     codecs: Res<DirworldCodecs>,
     mut commands: Commands,
+    mut event_writer: EventWriter<DirworldEnterRoom>,
+    mut current_dir: ResMut<DirworldCurrentDir>,
 ) {
     let path = &trigger.event().0;
 
+    let room_payload = extract_entity_payload(&path.join(".door"), &codecs).0;
+    *current_dir = DirworldCurrentDir {
+        path: path.to_path_buf(),
+        payload: room_payload,
+    };
     let entries = match path.read_dir() {
         Ok(entries) => entries
             .flatten()
@@ -74,6 +83,7 @@ pub fn navigate_to_room(
     for entry in entries {
         spawn_entity(&entry, &mut cache, &codecs, &observers, &mut commands);
     }
+    event_writer.send(trigger.event().clone());
 }
 
 pub fn handle_changes(
@@ -83,6 +93,7 @@ pub fn handle_changes(
     observers: Res<DirworldObservers>,
     codecs: Res<DirworldCodecs>,
     mut cache: ResMut<DirworldCache>,
+    mut event_writer: EventWriter<DirworldWatcherEvent>,
 ) {
     let event = &trigger.event().0;
     info!("Watcher Event: {event:?}");
@@ -121,12 +132,12 @@ pub fn handle_changes(
             // warn!("Not Processed.")
         }
     }
+    event_writer.send(trigger.event().clone());
 }
 
 pub fn change_root(
     trigger: Trigger<DirworldChangeRoot>,
     mut root_dir: ResMut<DirworldRootDir>,
-    mut current_dir: ResMut<DirworldCurrentDir>,
     mut commands: Commands,
 ) {
     if let DirworldRootDir(Some(old_dir)) = root_dir.deref() {
@@ -136,7 +147,6 @@ pub fn change_root(
     let new_root = &trigger.event().0;
     info!("Changing Root to {}", new_root.display());
     **root_dir = Some(new_root.to_path_buf());
-    **current_dir = Some(new_root.to_path_buf());
 
     commands.trigger(DirworldEnterRoom(new_root.to_path_buf()));
 }

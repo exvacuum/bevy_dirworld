@@ -20,7 +20,7 @@ use crate::{
 pub struct DirworldWatcherSet;
 
 /// Event fired when a file watcher event is caught.
-#[derive(Event, Debug)]
+#[derive(Event, Clone, Debug)]
 pub struct DirworldWatcherEvent(pub notify::Event);
 
 #[derive(Resource)]
@@ -65,10 +65,9 @@ async fn file_watcher(rx: Receiver<PathBuf>, tx: Sender<notify::Event>) {
     loop {
         while let Ok(message) = rx.try_recv() {
             if let Some(old_path) = &old_path {
-                debouncer.watcher().unwatch(old_path).unwrap();
+                debouncer.unwatch(old_path).unwrap();
             }
             debouncer
-                .watcher()
                 .watch(&message, RecursiveMode::NonRecursive)
                 .unwrap();
             old_path = Some(message);

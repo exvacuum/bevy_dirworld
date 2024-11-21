@@ -3,7 +3,7 @@ use std::{fs, path::PathBuf};
 use bevy::prelude::*;
 
 use crate::{
-    components::DirworldEntity, events::DirworldSpawn, payload::{DirworldComponent, DirworldEntityPayload}, resources::{DirworldCache, DirworldCodecs, DirworldObservers, EntryType}, Extensions
+    components::DirworldEntity, events::DirworldSpawn, payload::DirworldEntityPayload, resources::{DirworldCache, DirworldCodecs, DirworldObservers, EntryType}, Extensions
 };
 
 pub fn extract_entity_payload(
@@ -74,18 +74,7 @@ pub fn spawn_entity(
         payload = Some(cached_payload);
     }
 
-    let transform = if let Some(component) = payload
-        .as_ref()
-        .and_then(|payload| payload.component("Transform"))
-    {
-        if let DirworldComponent::Transform(transform) = component {
-            transform.clone()
-        } else {
-            panic!("BAD DECOMPOSE: TRANSFORM ({component:?})");
-        }
-    } else {
-        Transform::default()
-    };
+    let transform = payload.as_ref().map(|payload| payload.transform.clone()).unwrap_or_default();
     let entry_type = if entry.is_dir() {
         EntryType::Folder
     } else {
@@ -94,7 +83,7 @@ pub fn spawn_entity(
     let entity = commands
         .spawn((
             SpatialBundle {
-                transform,
+                transform: *transform,
                 ..Default::default()
             },
             DirworldEntity {

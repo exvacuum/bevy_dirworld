@@ -4,22 +4,25 @@ version = "0.2.1"
 edition = "2021"
 
 [dependencies]
-anyhow = "1.0.83"
-async-channel = "2.3.1"
-notify = "6.1.1"
-tar = "0.4.41"
-xz2 = "0.1.7"
-rust-crypto = "0.2.36"
-multi_key_map = "0.3.0"
+anyhow = "1.0"
+async-channel = "2.3"
+notify = "7.0"
+tar = "0.4"
+xz2 = "0.1"
+rust-crypto = "0.2"
+multi_key_map = "0.3"
 serde = "1.0"
-rmp-serde = "1.3.0"
+rmp-serde = "1.3"
 anymap = "0.12"
-notify-debouncer-full = "0.3"
+notify-debouncer-full = "0.4"
 md5 = "0.7"
 bevy-async-ecs = "0.6"
 aes = "0.8"
 hex = "0.4"
 hex-literal = "0.4"
+uuid = "1.11"
+strum = "0.26"
+lazy_static = "1.5"
 
 [dependencies.bevy]
 version = "0.14"
@@ -42,9 +45,9 @@ features = ["serde"]
 version = "0.6"
 features = ["lua"]
 
-[dependencies.strum]
-version = "0.26"
-features = ["derive"]
+[dependencies.bevy_basic_interaction]
+git = "https://github.com/exvacuum/bevy_basic_interaction.git"
+tag = "v0.1.0"
 
 [features]
 default = ["yarnspinner"]

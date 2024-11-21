@@ -1,11 +1,7 @@
-use std::{
-    fs, path::PathBuf,
-};
+use std::{fs, path::PathBuf};
 
 use bevy::{
-    ecs::
-        world::{Command, CommandQueue}
-    ,
+    ecs::world::{Command, CommandQueue},
     prelude::*,
     tasks::AsyncComputeTaskPool,
 };
@@ -18,9 +14,10 @@ use occule::Error;
 use xz2::read::{XzDecoder, XzEncoder};
 
 use crate::{
-    payload::{DirworldComponent, DirworldComponentDiscriminants, DirworldEntityPayload}, resources::{
-        DirworldCodecs, DirworldObservers, DirworldTasks,
-    }, utils::extract_entity_payload, Extensions
+    payload::DirworldEntityPayload,
+    resources::{DirworldCodecs, DirworldObservers, DirworldTasks},
+    utils::extract_entity_payload,
+    Extensions,
 };
 
 struct DirworldLockDoorCommand {
@@ -57,7 +54,13 @@ impl Command for DirworldLockDoorCommand {
                 let result = crypter
                     .encrypt(&mut read_buffer, &mut write_buffer, true)
                     .expect("Failed to encrypt data!");
-                encrypted.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i|i));
+                encrypted.extend(
+                    write_buffer
+                        .take_read_buffer()
+                        .take_remaining()
+                        .iter()
+                        .map(|&i| i),
+                );
                 match result {
                     BufferResult::BufferUnderflow => break,
                     BufferResult::BufferOverflow => {}
@@ -72,11 +75,9 @@ impl Command for DirworldLockDoorCommand {
 
             // Insert key hash as payload relationship
             let key_digest = md5::compute(&self.key[..16]);
-            let mut payload = payload.unwrap_or_default();
-            payload.push(DirworldComponent::Relationship {
-                label: "key".into(),
-                hash: key_digest.0,
-            });
+            let mut payload = payload.unwrap_or_else(|| DirworldEntityPayload::new());
+            let relationships = payload.relationships.get_or_insert_default();
+            relationships.insert("key".into(), key_digest.0);
 
             // Write payload
             let mut command_queue = CommandQueue::default();
@@ -119,7 +120,13 @@ impl Command for DirworldUnlockDoorCommand {
                 let result = decrypter
                     .decrypt(&mut read_buffer, &mut write_buffer, true)
                     .expect("Failed to encrypt data!");
-                decrypted.extend(write_buffer.take_read_buffer().take_remaining().iter().map(|&i|i));
+                decrypted.extend(
+                    write_buffer
+                        .take_read_buffer()
+                        .take_remaining()
+                        .iter()
+                        .map(|&i| i),
+                );
                 match result {
                     BufferResult::BufferUnderflow => break,
                     BufferResult::BufferOverflow => {}
@@ -137,16 +144,9 @@ impl Command for DirworldUnlockDoorCommand {
             fs::remove_file(path.clone()).unwrap();
 
             if let Some(mut payload) = payload {
-                for (index, relationship) in payload.iter().enumerate().filter(|(_, x)| {
-                    DirworldComponentDiscriminants::from(*x)
-                        == DirworldComponentDiscriminants::Relationship
-                }) {
-                    if let DirworldComponent::Relationship { label, .. } = relationship {
-                        if label == "key" {
-                            payload.remove(index);
-                            break;
-                        }
-                    }
+                // Remove key relationship
+                if let Some(ref mut relationships) = payload.relationships {
+                    relationships.remove("key");
                 }
 
                 // Write payload

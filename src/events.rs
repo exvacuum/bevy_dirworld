@@ -17,13 +17,13 @@ pub enum DirworldNavigationEvent {
     },
 }
 
-#[derive(Debug, Event, Deref, DerefMut)]
+#[derive(Debug, Event, Deref, DerefMut, Clone)]
 pub struct DirworldLeaveRoom(pub PathBuf);
 
-#[derive(Debug, Event, Deref, DerefMut)]
+#[derive(Debug, Event, Deref, DerefMut, Clone)]
 pub struct DirworldEnterRoom(pub PathBuf);
 
-#[derive(Debug, Event, Deref, DerefMut)]
+#[derive(Debug, Event, Deref, DerefMut, Clone)]
 pub struct DirworldChangeRoot(pub PathBuf);
 
 #[derive(Event)]
