@@ -38,7 +38,7 @@ git = "http://github.com/exvacuum/occule"
 branch = "wip"
 
 [dependencies.yarnspinner]
-version = "0.3"
+git = "https://github.com/YarnSpinnerTool/YarnSpinner-Rust"
 optional = true
 features = ["serde"]
 
