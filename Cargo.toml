@@ -35,6 +35,7 @@ features = ["serialize"]
 
 [dependencies.occule]
 git = "http://github.com/exvacuum/occule"
+branch = "wip"
 
 [dependencies.yarnspinner]
 version = "0.3"
