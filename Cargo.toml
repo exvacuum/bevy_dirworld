@@ -21,7 +21,6 @@ aes = "0.8"
 hex = "0.4"
 hex-literal = "0.4"
 uuid = "1.11"
-strum = "0.26"
 lazy_static = "1.5"
 
 [dependencies.bevy]
@@ -49,6 +48,10 @@ features = ["lua"]
 [dependencies.bevy_basic_interaction]
 git = "https://github.com/exvacuum/bevy_basic_interaction.git"
 branch = "wip"
+
+[dependencies.strum]
+version = "0.26"
+features = ["derive"]
 
 [features]
 default = ["yarnspinner"]
