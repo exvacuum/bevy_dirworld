@@ -14,6 +14,7 @@ pub struct DirworldEntityPayload {
     pub mesh_collider: Option<components::MeshCollider>,
     pub scripts: Option<Vec<components::Script>>,
     pub relationships: Option<components::Relationships>,
+    pub pickup: Option<components::Pickup>,
 }
 
 impl DirworldEntityPayload {

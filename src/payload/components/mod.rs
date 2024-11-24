@@ -54,3 +54,6 @@ pub struct Script {
 
 #[derive(Serialize, Deserialize, Clone, Default, Deref, DerefMut, Debug)]
 pub struct Relationships(pub HashMap<String, [u8; 16]>);
+
+#[derive(Serialize, Deserialize, Clone, Default, Debug)]
+pub struct Pickup;
