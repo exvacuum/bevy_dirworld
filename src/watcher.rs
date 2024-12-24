@@ -1,21 +1,16 @@
 use std::{
-    path::{Path, PathBuf},
+    path::PathBuf,
     time::Duration,
 };
 
 use async_channel::{Receiver, Sender};
 use bevy::{prelude::*, tasks::IoTaskPool};
-use notify::{
-    event::{AccessKind, AccessMode, DataChange, MetadataKind, ModifyKind, RenameMode},
-    EventKind, RecursiveMode, Watcher,
-};
+use notify::RecursiveMode;
 use notify_debouncer_full::{new_debouncer, DebounceEventResult};
 
-use crate::{
-    components::DirworldEntity,
-    resources::{DirworldCache, DirworldCodecs, DirworldObservers, DirworldRootDir},
-};
+use crate::resources::DirworldRootDir;
 
+/// SystemSet for dirworld watcher systems
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DirworldWatcherSet;
 
@@ -94,4 +89,3 @@ pub fn update(
         }
     }
 }
-

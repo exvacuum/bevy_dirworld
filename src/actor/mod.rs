@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 use bevy::{prelude::*, utils::HashMap};
 use lazy_static::lazy_static;
 use resources::FunctionLibrary;
-use yarnspinner::{core::{LineId, YarnValue}, runtime::Dialogue};
+use yarnspinner::core::YarnValue;
 
 pub mod components;
 pub mod events;
@@ -23,6 +23,7 @@ lazy_static! {
 
 /// Plugin which controls the behavior of actors
 pub struct ActorPlugin {
+    /// Callback for registering custom yarnspinner functions
     pub custom_function_registration: Option<fn(&mut FunctionLibrary)>,
 }
 

@@ -261,19 +261,20 @@ pub trait DirworldCommands {
     /// Unlock Door
     fn dirworld_unlock_door(&mut self, path: PathBuf, key: Vec<u8>);
 
+    /// Save entity
     fn dirworld_save_entity(&mut self, path: PathBuf, payload: DirworldEntityPayload);
 }
 
 impl<'w, 's> DirworldCommands for Commands<'w, 's> {
     fn dirworld_lock_door(&mut self, path: PathBuf, key: Vec<u8>) {
-        self.add(DirworldLockDoorCommand { key, path });
+        self.queue(DirworldLockDoorCommand { key, path });
     }
 
     fn dirworld_unlock_door(&mut self, path: PathBuf, key: Vec<u8>) {
-        self.add(DirworldUnlockDoorCommand { key, path });
+        self.queue(DirworldUnlockDoorCommand { key, path });
     }
 
     fn dirworld_save_entity(&mut self, path: PathBuf, payload: DirworldEntityPayload) {
-        self.add(DirworldSaveEntityCommand { path, payload });
+        self.queue(DirworldSaveEntityCommand { path, payload });
     }
 }

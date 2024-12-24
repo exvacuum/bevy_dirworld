@@ -3,9 +3,10 @@ use std::{fs, path::PathBuf};
 use bevy::prelude::*;
 
 use crate::{
-    components::DirworldEntity, events::DirworldSpawn, payload::DirworldEntityPayload, resources::{DirworldCache, DirworldCodecs, DirworldObservers, EntryType}, Extensions
+    components::DirworldEntity, payload::DirworldEntityPayload, resources::DirworldCodecs, Extensions
 };
 
+/// Extracts the binary payload from a file
 pub fn extract_entity_payload(
     path: &PathBuf,
     codecs: &DirworldCodecs,
@@ -62,41 +63,7 @@ pub fn extract_entity_payload(
     (payload, data)
 }
 
-pub fn spawn_entity(
-    entry: &PathBuf,
-    cache: &mut DirworldCache,
-    codecs: &DirworldCodecs,
-    observers: &DirworldObservers,
-    commands: &mut Commands,
-) {
-    let (mut payload, data) = extract_entity_payload(&entry, &codecs);
-    if let Some(cached_payload) = cache.remove(entry) {
-        payload = Some(cached_payload);
-    }
-
-    let transform = payload.as_ref().map(|payload| payload.transform.clone()).unwrap_or_default();
-    let entry_type = if entry.is_dir() {
-        EntryType::Folder
-    } else {
-        EntryType::File(entry.extensions())
-    };
-    let entity = commands
-        .spawn((
-            SpatialBundle {
-                transform: *transform,
-                ..Default::default()
-            },
-            DirworldEntity {
-                path: entry.clone(),
-                payload,
-            },
-        ))
-        .id();
-    if let Some(observer) = observers.get(&entry_type) {
-        commands.trigger_targets(DirworldSpawn { entity, data }, observer.clone());
-    }
-}
-
+/// Despawns an entity corresponding to a path on the filesystem
 pub fn despawn_entity_by_path(
     commands: &mut Commands,
     dirworld_entities: &Query<(Entity, &DirworldEntity)>,

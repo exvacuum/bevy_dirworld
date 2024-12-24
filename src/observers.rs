@@ -7,13 +7,9 @@ use notify::{
 };
 
 use crate::{
-    components::{DirworldEntity, Persist},
-    events::{DirworldChangeRoot, DirworldEnterRoom, DirworldLeaveRoom},
-    resources::{
-        DirworldCache, DirworldCodecs, DirworldCurrentDir, DirworldObservers, DirworldRootDir,
-    },
-    utils::{despawn_entity_by_path, extract_entity_payload, spawn_entity},
-    DirworldWatcherEvent,
+    cache::DirworldCache, components::{DirworldEntity, Persist}, events::{DirworldChangeRoot, DirworldEnterRoom, DirworldLeaveRoom}, preload::{load_entity, PreloadState, RoomAssets}, resources::{
+        DirworldCodecs, DirworldCurrentDir, DirworldObservers, DirworldRootDir,
+    }, utils::{despawn_entity_by_path, extract_entity_payload}, DirworldWatcherEvent
 };
 
 /// On navigation from a room, insert modified payloads into the cache
@@ -25,10 +21,7 @@ pub fn navigate_from_room(
     mut event_writer: EventWriter<DirworldLeaveRoom>,
 ) {
     for (entity, dirworld_entity) in entities.iter() {
-        if let Some(payload) = &dirworld_entity.payload {
-            info!("Caching {entity:?}");
-            cache.insert(dirworld_entity.path.clone(), payload.clone());
-        }
+        cache.cache_entity(&dirworld_entity);
         commands.entity(entity).despawn_recursive();
     }
     event_writer.send(trigger.event().clone());
@@ -43,6 +36,8 @@ pub fn navigate_to_room(
     mut commands: Commands,
     mut event_writer: EventWriter<DirworldEnterRoom>,
     mut current_dir: ResMut<DirworldCurrentDir>,
+    mut next_preload_state: ResMut<NextState<PreloadState>>,
+    mut room_assets: ResMut<RoomAssets>,
 ) {
     let path = &trigger.event().0;
 
@@ -81,7 +76,15 @@ pub fn navigate_to_room(
     };
 
     for entry in entries {
-        spawn_entity(&entry, &mut cache, &codecs, &observers, &mut commands);
+        load_entity(
+            &entry,
+            &mut cache,
+            &codecs,
+            &observers,
+            &mut commands,
+            &mut next_preload_state,
+            &mut room_assets,
+        );
     }
     event_writer.send(trigger.event().clone());
 }
@@ -94,6 +97,8 @@ pub fn handle_changes(
     codecs: Res<DirworldCodecs>,
     mut cache: ResMut<DirworldCache>,
     mut event_writer: EventWriter<DirworldWatcherEvent>,
+    mut next_preload_state: ResMut<NextState<PreloadState>>,
+    mut room_assets: ResMut<RoomAssets>,
 ) {
     let event = &trigger.event().0;
     info!("Watcher Event: {event:?}");
@@ -105,27 +110,39 @@ pub fn handle_changes(
         }
         EventKind::Create(_) | EventKind::Modify(ModifyKind::Name(RenameMode::To)) => {
             for path in &event.paths {
-                spawn_entity(path, &mut cache, &codecs, &observers, &mut commands);
+                load_entity(
+                    &path,
+                    &mut cache,
+                    &codecs,
+                    &observers,
+                    &mut commands,
+                    &mut next_preload_state,
+                    &mut room_assets,
+                );
             }
         }
         EventKind::Modify(ModifyKind::Name(RenameMode::Both)) => {
             despawn_entity_by_path(&mut commands, &dirworld_entities, &event.paths[0]);
-            spawn_entity(
+            load_entity(
                 &event.paths[1],
                 &mut cache,
                 &codecs,
                 &observers,
                 &mut commands,
+                &mut next_preload_state,
+                &mut room_assets,
             );
         }
         EventKind::Modify(ModifyKind::Metadata(MetadataKind::Any)) => {
             despawn_entity_by_path(&mut commands, &dirworld_entities, &event.paths[1]);
-            spawn_entity(
+            load_entity(
                 &event.paths[0],
                 &mut cache,
                 &codecs,
                 &observers,
                 &mut commands,
+                &mut next_preload_state,
+                &mut room_assets,
             );
         }
         _ => {

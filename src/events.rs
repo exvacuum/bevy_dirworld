@@ -17,17 +17,18 @@ pub enum DirworldNavigationEvent {
     },
 }
 
+/// Event called when leaving a room
 #[derive(Debug, Event, Deref, DerefMut, Clone)]
 pub struct DirworldLeaveRoom(pub PathBuf);
 
+/// Event called when entering a room
 #[derive(Debug, Event, Deref, DerefMut, Clone)]
 pub struct DirworldEnterRoom(pub PathBuf);
 
+/// Event called when changing the world root
 #[derive(Debug, Event, Deref, DerefMut, Clone)]
 pub struct DirworldChangeRoot(pub PathBuf);
 
-#[derive(Event)]
-pub struct DirworldSpawn {
-    pub entity: Entity,
-    pub data: Option<Vec<u8>>,
-}
+/// Event called to spawn a dirworld entities
+#[derive(Event, Debug, Deref, DerefMut, Clone, Copy)]
+pub struct DirworldSpawn(pub Entity);

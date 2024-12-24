@@ -1,25 +1,21 @@
-use std::str::FromStr;
+use std::{str::FromStr, sync::Mutex};
 
 use bevy::prelude::*;
-use bevy_scriptum::{
-    runtimes::lua::{BevyEntity, BevyVec3, LuaRuntime, LuaScriptData},
-    Runtime, ScriptingRuntimeBuilder,
-};
+use bevy_mod_scripting::api::providers::bevy_reflect::LuaVec3;
+use bevy_mod_scripting::{api::providers::bevy_ecs::LuaEntity, lua::tealr::mlu::mlua::Error as LuaError};
+use bevy_mod_scripting::lua::LuaEvent;
+use bevy_mod_scripting::prelude::*;
 use uuid::Uuid;
 
 use crate::{components::DirworldEntity, conditionals::Condition};
 
-pub fn trigger_update(
-    mut scripted_entities: Query<(Entity, &mut LuaScriptData)>,
-    scripting_runtime: Res<LuaRuntime>,
-    time: Res<Time>,
-) {
-    let delta = time.delta_seconds();
-    for (entity, mut script_data) in scripted_entities.iter_mut() {
-        if let Err(e) = scripting_runtime.call_fn("on_update", &mut script_data, entity, (delta,)) {
-            error!("Encountered lua scripting error: {:?}", e);
-        }
-    }
+pub fn trigger_update(mut w: PriorityEventWriter<LuaEvent<()>>) {
+    let event = LuaEvent::<()> {
+        args: (),
+        hook_name: "on_update".into(),
+        recipients: Recipients::All,
+    };
+    w.send(event, 0);
 }
 
 // ACTUAL API STUFF BELOW THIS POINT {{{
@@ -27,16 +23,15 @@ pub fn trigger_update(
 macro_rules! register_fns {
     ($runtime:expr, $($function:expr),+) => {
         {
-            $runtime$(.add_function(stringify!($function).to_string(), $function))+
+            let ctx = $runtime.get_mut().unwrap();
+            $(ctx.globals().set(stringify!($function).to_string(), ctx.create_function($function).unwrap()).unwrap();)+
         }
     };
 }
 
-pub fn register(
-    runtime: ScriptingRuntimeBuilder<LuaRuntime>,
-) -> ScriptingRuntimeBuilder<LuaRuntime> {
+pub fn register(api: &mut Mutex<Lua>) {
     register_fns!(
-        runtime,
+        api,
         translate,
         rotate,
         get_dirworld_id,
@@ -50,113 +45,148 @@ pub fn register(
     )
 }
 
-fn translate(
-    In((BevyEntity(entity), BevyVec3(translation))): In<(BevyEntity, BevyVec3)>,
-    mut transform_query: Query<&mut Transform>,
-) {
-    if let Ok(mut transform) = transform_query.get_mut(entity) {
-        transform.translation += translation;
+fn translate(ctx: &Lua, (entity, translation): (LuaEntity, LuaVec3)) -> Result<(), LuaError> {
+    let world = ctx.get_world()?;
+    let mut world = world.write();
+    if let Some(mut transform) = world.entity_mut(entity.inner().unwrap()).get_mut::<Transform>() {
+        transform.translation += translation.inner().unwrap();
     }
+    Ok(())
 }
 
-fn rotate(
-    In((BevyEntity(entity), BevyVec3(axis), angle)): In<(BevyEntity, BevyVec3, f32)>,
-    mut transform_query: Query<&mut Transform>,
-) {
-    if let Ok(mut transform) = transform_query.get_mut(entity) {
-        if let Ok(direction) = Dir3::new(axis) {
-            transform.rotate_axis(direction, angle);
-        } else {
-            warn!("Provided axis was not a valid direction!");
-        }
+fn rotate(ctx: &Lua, (entity, axis, angle): (LuaEntity, LuaVec3, f32)) -> Result<(), LuaError> {
+    let world = ctx.get_world()?;
+    let mut world = world.write();
+    if let Some(mut transform) = world.entity_mut(entity.inner().unwrap()).get_mut::<Transform>() {
+        transform.rotation *= Quat::from_axis_angle(axis.inner().unwrap(), angle);
     }
+    Ok(())
 }
 
-fn get_dirworld_id(In((BevyEntity(entity),)): In<(BevyEntity,)>, dirworld_entity_query: Query<&DirworldEntity>) -> Option<String> {
-    dirworld_entity_query.get(entity).ok().and_then(|entity| entity.payload.as_ref().map(|payload| payload.id.to_string()))
+fn get_dirworld_id(ctx: &Lua, (entity,): (LuaEntity,)) -> Result<String, LuaError> {
+    let world = ctx.get_world()?;
+    let world = world.read();
+    if let Some(dirworld_entity) = world.entity(entity.inner().unwrap()).get::<DirworldEntity>() {
+        dirworld_entity.payload.as_ref().map(|p| p.id.to_string()).ok_or(LuaError::runtime("Failed to get entity id from payload"))
+    } else {
+        Err(LuaError::runtime("Entity missing DirworldEntity component"))
+    }
 }
 
 // Conditionals
-fn condition_true(world: &mut World) -> bool {
-    Condition::True.evaluate(world)
+
+pub struct ConditionalAPI;
+
+impl APIProvider for ConditionalAPI {
+    type APITarget = Mutex<Lua>;
+
+    type ScriptContext = Mutex<Lua>;
+
+    type DocTarget = LuaDocFragment;
+
+    fn attach_api(
+        &mut self,
+        api: &mut Self::APITarget,
+    ) -> Result<(), bevy_mod_scripting::prelude::ScriptError> {
+        register(api);
+        Ok(())
+    }
 }
 
-fn condition_ancestor_of(
-    In((ancestor, descendant)): In<(String, String)>,
-    world: &mut World,
-) -> bool {
+
+
+fn condition_true(ctx: &Lua, _: ()) -> Result<bool, LuaError> {
+    let world = ctx.get_world()?;
+    let mut world = world.write();
+    Ok(Condition::True.evaluate(&mut world))
+}
+
+fn condition_ancestor_of(ctx: &Lua, (ancestor, descendant): (String, String)) -> Result<bool, LuaError> {
+    let world = ctx.get_world()?;
+    let mut world = world.write();
     let Ok(ancestor) = Uuid::from_str(&ancestor) else {
         warn!("Provided ancestor is not a valid UUID");
-        return false;
+        return Ok(false);
     };
     let Ok(descendant) = Uuid::from_str(&descendant) else {
         warn!("Provided descendant is not a valid UUID");
-        return false;
+        return Ok(false);
     };
-    Condition::AncestorOf {
+    Ok(Condition::AncestorOf {
         ancestor,
         descendant,
-    }
-    .evaluate(world)
+    }.evaluate(&mut world))
 }
 
-fn condition_descendant_of(
-    In((descendant, ancestor)): In<(String, String)>,
-    world: &mut World,
-) -> bool {
+fn condition_descendant_of(ctx: &Lua, (descendant, ancestor): (String, String)) -> Result<bool, LuaError> {
+    let world = ctx.get_world()?;
+    let mut world = world.write();
     let Ok(ancestor) = Uuid::from_str(&ancestor) else {
         warn!("Provided ancestor is not a valid UUID");
-        return false;
+        return Ok(false);
     };
     let Ok(descendant) = Uuid::from_str(&descendant) else {
         warn!("Provided descendant is not a valid UUID");
-        return false;
+        return Ok(false);
     };
-    Condition::DescendantOf {
+    Ok(Condition::DescendantOf {
         ancestor,
         descendant,
-    }
-    .evaluate(world)
+    }.evaluate(&mut world))
 }
 
-fn condition_parent_of(In((parent, child)): In<(String, String)>, world: &mut World) -> bool {
+fn condition_parent_of(ctx: &Lua, (parent, child): (String, String)) -> Result<bool, LuaError> {
+    let world = ctx.get_world()?;
+    let mut world = world.write();
     let Ok(parent) = Uuid::from_str(&parent) else {
-        warn!("Provided parent is not a valid UUID");
-        return false;
+        warn!("Provided ancestor is not a valid UUID");
+        return Ok(false);
     };
     let Ok(child) = Uuid::from_str(&child) else {
-        warn!("Provided child is not a valid UUID");
-        return false;
+        warn!("Provided descendant is not a valid UUID");
+        return Ok(false);
     };
-    Condition::ParentOf { parent, child }.evaluate(world)
+    Ok(Condition::ParentOf {
+        parent,
+        child,
+    }.evaluate(&mut world))
 }
 
-fn condition_child_of(In((child, parent)): In<(String, String)>, world: &mut World) -> bool {
+fn condition_child_of(ctx: &Lua, (child, parent): (String, String)) -> Result<bool, LuaError> {
+    let world = ctx.get_world()?;
+    let mut world = world.write();
     let Ok(parent) = Uuid::from_str(&parent) else {
-        warn!("Provided parent is not a valid UUID");
-        return false;
+        warn!("Provided ancestor is not a valid UUID");
+        return Ok(false);
     };
     let Ok(child) = Uuid::from_str(&child) else {
-        warn!("Provided child is not a valid UUID");
-        return false;
+        warn!("Provided descendant is not a valid UUID");
+        return Ok(false);
     };
-    Condition::ChildOf { parent, child }.evaluate(world)
+    Ok(Condition::ChildOf {
+        parent,
+        child,
+    }.evaluate(&mut world))
 }
 
-fn condition_in_room(In((room,)): In<(String,)>, world: &mut World) -> bool {
+fn condition_in_room(ctx: &Lua, (room,): (String,)) -> Result<bool, LuaError> {
+    let world = ctx.get_world()?;
+    let mut world = world.write();
     let Ok(room) = Uuid::from_str(&room) else {
         warn!("Provided room is not a valid UUID");
-        return false;
+        return Ok(false);
     };
-    Condition::InRoom(room).evaluate(world)
+    Ok(Condition::InRoom(room).evaluate(&mut world))
 }
 
-fn condition_object_in_room(In((object,)): In<(String,)>, world: &mut World) -> bool {
+fn condition_object_in_room(ctx: &Lua, (object,): (String,)) -> Result<bool, LuaError> {
+    let world = ctx.get_world()?;
+    let mut world = world.write();
     let Ok(object) = Uuid::from_str(&object) else {
         warn!("Provided object is not a valid UUID");
-        return false;
+        return Ok(false);
     };
-    Condition::ObjectInRoom(object).evaluate(world)
+    Ok(Condition::ObjectInRoom(object).evaluate(&mut world))
 }
 
 // }}}

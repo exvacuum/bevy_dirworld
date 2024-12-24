@@ -3,44 +3,60 @@ use bevy::{
     prelude::{AncestorIter, Entity, Parent, Query, World},
 };
 use serde::{Deserialize, Serialize};
-use strum::{AsRefStr, EnumString};
+use strum::AsRefStr;
 use uuid::Uuid;
 
 use crate::{components::DirworldEntity, resources::DirworldCurrentDir};
 
-// I Store Conditions as Enum Data
+/// Conditions which can be checked in lua and yarnspinner scripts
 #[derive(Serialize, Deserialize, AsRefStr, Debug, Default, Clone, PartialEq, Eq)]
 pub enum Condition {
+    /// Always true
     #[default]
     #[strum(serialize = "Always True")]
     True,
+    /// True if `child` is a child of `parent`
     #[strum(serialize = "Child Of")]
     ChildOf {
+        /// Entity that must be child
         child: Uuid,
+        /// Entity that must be parent
         parent: Uuid,
     },
+    /// True if `parent` is the parent of `child`
     #[strum(serialize = "Parent Of")]
     ParentOf {
+        /// Entity that must be parent
         parent: Uuid,
+        /// Entity that must be child
         child: Uuid,
     },
+    /// True if `descendant` is a descendant of `ancestor`
     #[strum(serialize = "Descendant Of")]
     DescendantOf {
+        /// Entity that must be descendant
         descendant: Uuid,
+        /// Entity that must be ancestor
         ancestor: Uuid,
     },
+    /// True if `ancestor` is an ancestor of `descendant`
     #[strum(serialize = "Ancestor Of")]
     AncestorOf {
+        /// Entity that must be ancestor
         ancestor: Uuid,
+        /// Entity that must be descendant
         descendant: Uuid,
     },
+    /// True if current room matches provided id
     #[strum(serialize = "In Room")]
     InRoom(Uuid),
+    /// True if an object with the provided id is in the current room
     #[strum(serialize = "Object In Room")]
     ObjectInRoom(Uuid),
 }
 
 impl Condition {
+    /// Evaluate the condition and return the result
     pub fn evaluate(&self, world: &mut World) -> bool {
         match self {
             Condition::True => true,
@@ -59,6 +75,7 @@ impl Condition {
         }
     }
 
+    /// Get the name of the condition's corresponding function for lua/yarnspinner APIs
     pub fn get_api_function_name(&self) -> &'static str {
         match self {
             Condition::True => "conditional_true",
@@ -71,6 +88,7 @@ impl Condition {
         }
     }
 
+    /// Parses function name and argument strings into the corresponding condition representation
     pub fn from_api_function_name_and_args(name: &str, args: &[&str]) -> Option<Self> {
         match name {
             "conditional_true" => Some(Condition::True),
